@@ -1,0 +1,59 @@
+# ─────────────────────────────────────────────
+# Weed Detection Demo – Training Configuration
+# ─────────────────────────────────────────────
+
+dataset:
+  root: "outputs/sample_dataset"
+  img_size: 640
+  num_classes: 9
+  classes:
+    - Chinee_Apple
+    - Lantana
+    - Parkinsonia
+    - Parthenium
+    - Prickly_Acacia
+    - Rubber_Vine
+    - Siam_Weed
+    - Snake_Weed
+    - Negative
+
+# ── YOLOv8 detector ───────────────────────────
+detector:
+  model_size: "n"          # n | s | m | l | x
+  epochs: 50
+  batch: 16
+  imgsz: 640
+  lr0: 0.01
+  patience: 20
+  cos_lr: true
+  mosaic: 1.0
+  mixup: 0.1
+  output_dir: "outputs/yolo_runs"
+
+# ── ResNeXt-50 classifier ──────────────────────
+classifier:
+  epochs: 30
+  batch: 32
+  img_size: 224
+  lr: 0.001
+  weight_decay: 0.0001
+  warmup_epochs: 5
+  dropout: 0.3
+  label_smoothing: 0.1
+  pretrained: true
+  freeze_backbone_initially: true
+  unfreeze_layers_from_end: 2
+  output_dir: "outputs/classifier_runs"
+
+# ── Multispectral ──────────────────────────────
+multispectral:
+  fusion_mode: "rgb_ndvi"   # rgb | rgb_ndvi | all5 | vi_stack
+  bands: [R, G, B, NIR, RedEdge]
+
+# ── Inference ─────────────────────────────────
+inference:
+  det_conf: 0.25
+  det_iou: 0.45
+  output_dir: "outputs/inference_results"
+  map_grid_px: 256
+  kde_sigma: 10.0
