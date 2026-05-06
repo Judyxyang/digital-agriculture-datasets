@@ -74,12 +74,12 @@ def get_classification_transforms(split: str, img_size: int = 224):
     """
     if split == "train":
         return A.Compose([
-            A.RandomResizedCrop(height=img_size, width=img_size, scale=(0.7, 1.0)),
+            A.RandomResizedCrop(size=(img_size, img_size), scale=(0.7, 1.0)),
             A.HorizontalFlip(p=0.5),
             A.VerticalFlip(p=0.3),
             A.RandomRotate90(p=0.5),
             A.ColorJitter(brightness=0.3, contrast=0.3, saturation=0.3, hue=0.1, p=0.6),
-            A.GaussNoise(var_limit=(10, 50), p=0.3),
+            A.GaussNoise(p=0.3),
             A.Normalize(mean=IMAGENET_MEAN, std=IMAGENET_STD),
             ToTensorV2(),
         ])
