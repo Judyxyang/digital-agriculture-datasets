@@ -154,7 +154,7 @@ def main():
 
     # Quick sanity check
     import numpy as np
-    from weed_detection_demo.preprocessing.multispectral_preprocessing import (
+    from preprocessing.multispectral_preprocessing import (
         fuse_channels, compute_ndvi, FUSION_MODES as _FM,
     )
     ms_files = list(Path(ms_train).glob("*.npy"))
