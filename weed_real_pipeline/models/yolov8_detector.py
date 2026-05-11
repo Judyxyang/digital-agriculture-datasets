@@ -72,7 +72,9 @@ class WeedDetector:
             base_weights = self.MODEL_VARIANTS.get(model_size, "yolov8n.pt")
             self.model   = YOLO(base_weights)
 
-        self.model.to(device)
+        # "0,1" is a multi-GPU string for ultralytics train(); .to() doesn't accept it
+        if "," not in str(device):
+            self.model.to(device)
 
     # ── Training ─────────────────────────────────────────────────────────────
 

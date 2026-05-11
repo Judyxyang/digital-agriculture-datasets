@@ -129,8 +129,23 @@ class LocalWeedDataset:
         def _labels_dir(imgs: Optional[Path]) -> Optional[Path]:
             if imgs is None:
                 return None
-            lbl = Path(str(imgs).replace("images", "labels"))
-            return lbl if lbl.exists() else None
+            # Case 1: path contains "images" → swap to "labels"
+            if "images" in str(imgs):
+                lbl = Path(str(imgs).replace("images", "labels"))
+                if lbl.exists():
+                    return lbl
+            # Case 2: labels/ sibling of the split dir (e.g. train/../labels/train)
+            lbl = imgs.parent / "labels" / imgs.name
+            if lbl.exists():
+                return lbl
+            # Case 3: labels/ inside the split dir (e.g. train/labels/)
+            lbl = imgs / "labels"
+            if lbl.exists():
+                return lbl
+            # Case 4: .txt files are in the same folder as images
+            if any(imgs.glob("*.txt")):
+                return imgs
+            return None
 
         self.train_labels = _labels_dir(self.train_imgs)
         self.val_labels   = _labels_dir(self.val_imgs)
