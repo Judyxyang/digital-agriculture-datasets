@@ -34,11 +34,32 @@ from typing import List, Tuple, Optional
 import albumentations as A
 from albumentations.pytorch import ToTensorV2
 
-# Re-export multispectral utilities from the shared module so callers only
-# need to import from this file.
-import sys
-sys.path.insert(0, str(Path(__file__).parent.parent.parent / "weed_detection_demo"))
-from preprocessing.multispectral_preprocessing import (   # noqa: E402
+# Locate weed_detection_demo (works in both standalone and monorepo layouts)
+import sys, os
+
+def _find_demo_from_preprocessing() -> Path:
+    here = Path(__file__).resolve().parent
+    candidates = [
+        here.parent.parent / "weed_detection_demo",                           # monorepo: sibling of weed_real_pipeline
+        here.parent.parent / "digital-agriculture-datasets" / "weed_detection_demo",
+        Path.home() / "weed" / "digital-agriculture-datasets" / "weed_detection_demo",
+        Path.home() / "digital-agriculture-datasets" / "weed_detection_demo",
+    ]
+    demo_env = os.environ.get("DEMO_PATH")
+    if demo_env:
+        candidates.insert(0, Path(demo_env))
+    for c in candidates:
+        if (c / "preprocessing" / "multispectral_preprocessing.py").exists():
+            return c
+    raise FileNotFoundError(
+        "Cannot find weed_detection_demo/preprocessing/multispectral_preprocessing.py. "
+        "Set the DEMO_PATH env var to the weed_detection_demo folder."
+    )
+
+_demo_path = _find_demo_from_preprocessing()
+sys.path.insert(0, str(_demo_path.parent))
+
+from weed_detection_demo.preprocessing.multispectral_preprocessing import (  # noqa: E402
     fuse_channels, normalise_ms_image, compute_ndvi, compute_gndvi,
     compute_re_ndvi, standardise, FUSION_MODES, FUSION_STATS,
 )
