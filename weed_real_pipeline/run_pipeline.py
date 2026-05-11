@@ -66,12 +66,12 @@ def _find_demo() -> Path:
 
 _demo = Path(os.environ.get("DEMO_PATH", "")) if os.environ.get("DEMO_PATH") else _find_demo()
 sys.path.insert(0, str(_demo.parent))   # so `weed_detection_demo` is importable
-sys.path.insert(0, str(PIPELINE_DIR.parent))  # so `weed_real_pipeline` is importable
+sys.path.insert(0, str(PIPELINE_DIR))   # so `data`, `preprocessing` etc are importable
 
 import yaml
 
-from weed_real_pipeline.data.dataset_loader import LocalWeedDataset
-from weed_real_pipeline.preprocessing.preprocessing import (
+from data.dataset_loader import LocalWeedDataset
+from preprocessing.preprocessing import (
     RGBClassificationDataset, FUSION_MODES,
 )
 from weed_detection_demo.models.yolov8_detector import WeedDetector
