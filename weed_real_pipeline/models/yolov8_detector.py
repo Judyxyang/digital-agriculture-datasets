@@ -92,6 +92,8 @@ class WeedDetector:
         Fine-tune on a custom weed dataset.
 
         Returns path to the best checkpoint.
+        Training plots (results.png, confusion_matrix.png, PR_curve.png, etc.)
+        are saved to <output_dir>/weed_detection/.
         """
         results = self.model.train(
             data=dataset_yaml,
@@ -102,10 +104,22 @@ class WeedDetector:
             project=output_dir,
             name="weed_detection",
             exist_ok=True,
+            plots=True,
             device=self.device,
             **kwargs,
         )
-        best_pt = Path(output_dir) / "weed_detection" / "weights" / "best.pt"
+        run_dir  = Path(output_dir) / "weed_detection"
+        best_pt  = run_dir / "weights" / "best.pt"
+        print(f"\n[YOLO] Run directory : {run_dir.resolve()}")
+        print(f"[YOLO] Best weights  : {best_pt}")
+        results_png = run_dir / "results.png"
+        if results_png.exists():
+            print(f"[YOLO] Training plots: {results_png}")
+        else:
+            # ultralytics ≥8.2 saves individual curve files instead
+            curves = list(run_dir.glob("*.png"))
+            if curves:
+                print(f"[YOLO] Training plots: {[p.name for p in curves]}")
         return str(best_pt)
 
     # ── Validation ───────────────────────────────────────────────────────────

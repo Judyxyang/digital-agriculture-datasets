@@ -357,6 +357,16 @@ def main():
 
     step("COMPLETE")
     print(f"  All outputs → {out.resolve()}")
+    if not args.skip_train:
+        yolo_run_dir = out / "yolo" / "weed_detection"
+        print(f"\n  YOLOv8 training plots:")
+        print(f"    {yolo_run_dir}/results.png")
+        print(f"    {yolo_run_dir}/confusion_matrix.png")
+        print(f"    {yolo_run_dir}/PR_curve.png")
+        print(f"    {yolo_run_dir}/weights/best.pt")
+        print(f"\n  ResNeXt-50 checkpoint:")
+        print(f"    {out / 'classifier' / 'best_classifier.pt'}")
+    print(f"\n  Inference results:")
     print(f"    {inf_out}/density_heatmap.png")
     print(f"    {inf_out}/category_map.png")
     print(f"    {inf_out}/per_species_heatmaps/")
