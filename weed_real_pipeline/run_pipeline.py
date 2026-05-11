@@ -56,10 +56,11 @@ from preprocessing.preprocessing import RGBClassificationDataset, FUSION_MODES
 from models.yolov8_detector import WeedDetector
 from models.resnext50_classifier import (
     WeedClassifier, LabelSmoothingCrossEntropy,
-    build_optimizer, build_scheduler, save_checkpoint,
+    build_optimizer, build_scheduler, save_checkpoint, load_checkpoint,
 )
 from inference.inference_pipeline import WeedInferencePipeline
 from inference.distribution_map import WeedDistributionMapper
+from evaluation.model_assessment import ClassifierAssessment
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -382,6 +383,66 @@ def main():
     mapper = WeedDistributionMapper(class_names=CLASS_NAMES)
     mapper.generate_all(results, output_dir=inf_out)
 
+    # ── Stage 8: Model Assessment (DeepWeeds-style metrics) ──────────────────
+    step("Stage 8 — Model Assessment (DeepWeeds-style metrics)")
+
+    if cls_weights and Path(cls_weights).exists():
+        import torch as _torch
+        _dev_str = args.device
+        if "," in _dev_str:
+            _assess_device = _torch.device("cuda:0")
+        elif _dev_str.isdigit():
+            _assess_device = _torch.device(f"cuda:{_dev_str}")
+        else:
+            _assess_device = _torch.device(_dev_str)
+
+        # Use val crops for assessment (always available; test crops extracted if present)
+        assess_crops = crops_val
+        assess_split = "val"
+        if ds.test_imgs is not None:
+            test_crops = str(out / "classification" / "test")
+            ds.extract_crops(test_crops, split="test",
+                             crop_size=cls_cfg.get("crop_size", 96))
+            assess_crops = test_crops
+            assess_split = "test"
+
+        img_size = cls_cfg.get("img_size", 224)
+        assess_ds = RGBClassificationDataset(assess_crops, CLASS_NAMES,
+                                             "val", img_size)
+
+        if len(assess_ds) == 0:
+            print("  WARNING: No crop patches found for assessment — skipping.")
+        else:
+            print(f"  Assessment split : '{assess_split}' ({len(assess_ds)} crops)")
+            clf_model = load_checkpoint(cls_weights, CLASS_NAMES,
+                                        device=str(_assess_device))
+            assessor = ClassifierAssessment(
+                class_names=CLASS_NAMES,
+                output_dir=str(out / "assessment"),
+            )
+            metrics = assessor.evaluate(clf_model, assess_ds, _assess_device,
+                                        batch_size=cls_cfg.get("batch", 32))
+
+            # Collect YOLO detection metrics if we trained
+            _yolo_metrics = None
+            if not args.skip_train and yolo_weights and Path(yolo_weights).exists():
+                try:
+                    _det = WeedDetector(
+                        model_size=args.model_size,
+                        num_classes=len(CLASS_NAMES),
+                        weights_path=yolo_weights,
+                        device=args.device,
+                    )
+                    _yolo_metrics = _det.validate(yaml_path)
+                    print(f"  YOLO mAP@0.5: {_yolo_metrics['mAP50']:.4f}  "
+                          f"mAP@0.5-0.95: {_yolo_metrics['mAP50-95']:.4f}")
+                except Exception as e:
+                    print(f"  YOLO validation skipped: {e}")
+
+            assessor.save_report(metrics, _yolo_metrics, split_name=assess_split)
+    else:
+        print("  No classifier weights available — skipping assessment.")
+
     step("COMPLETE")
     print(f"  All outputs → {out.resolve()}")
     if not args.skip_train:
@@ -399,6 +460,11 @@ def main():
     print(f"    {inf_out}/per_species_heatmaps/")
     print(f"    {inf_out}/summary_stats.txt")
     print(f"    {inf_out}/*_detected.png")
+    print(f"\n  Model assessment (DeepWeeds-style metrics):")
+    print(f"    {out / 'assessment'}/assessment_report.txt")
+    print(f"    {out / 'assessment'}/confusion_matrix.png")
+    print(f"    {out / 'assessment'}/per_class_metrics.png")
+    print(f"    {out / 'assessment'}/metrics.json")
 
 
 if __name__ == "__main__":
