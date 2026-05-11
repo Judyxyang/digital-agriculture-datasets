@@ -90,6 +90,8 @@ def parse_args(cfg: dict):
     p.add_argument("--dataset_dir",  default=ds_cfg.get("root", "../weed_archive_detection"))
     p.add_argument("--output_dir",   default=ds_cfg.get("output_dir", "outputs/real_run"))
     p.add_argument("--skip_train",   action="store_true")
+    p.add_argument("--skip_yolo",    action="store_true",
+                   help="Skip YOLO detection stage (use for classification-only datasets like DeepWeeds)")
     p.add_argument("--yolo_weights", default=None)
     p.add_argument("--cls_weights",  default=None)
     p.add_argument("--det_epochs",   type=int,   default=det_cfg.get("epochs", 50))
@@ -183,37 +185,41 @@ def main():
         cls_weights  = args.cls_weights
     else:
         # ── Stage 5: Train YOLOv8 ────────────────────────────────────────────
-        step(f"Stage 5 — YOLOv8-{args.model_size} Training ({args.det_epochs} epochs)")
-        detector = WeedDetector(
-            model_size=args.model_size,
-            num_classes=len(CLASS_NAMES),
-            device=args.device,
-        )
-        yolo_out = str(out / "yolo")
-        t0 = time.time()
-        yolo_weights = detector.train(
-            dataset_yaml=yaml_path,
-            epochs=args.det_epochs,
-            imgsz=640,
-            batch=args.batch,
-            lr0=det_cfg.get("lr0", 0.01),
-            output_dir=yolo_out,
-            patience=det_cfg.get("patience", 20),
-            cos_lr=det_cfg.get("cos_lr", True),
-            mosaic=det_cfg.get("mosaic", 1.0),
-            mixup=det_cfg.get("mixup", 0.1),
-            hsv_h=det_cfg.get("hsv_h", 0.015),
-            hsv_s=det_cfg.get("hsv_s", 0.7),
-            hsv_v=det_cfg.get("hsv_v", 0.4),
-            fliplr=det_cfg.get("fliplr", 0.5),
-            flipud=det_cfg.get("flipud", 0.2),
-        )
-        print(f"  YOLOv8 done in {time.time()-t0:.0f}s  →  {yolo_weights}")
+        if args.skip_yolo:
+            step("Stage 5 — YOLOv8 Training [SKIPPED — classification-only dataset]")
+            yolo_weights = None
+        else:
+            step(f"Stage 5 — YOLOv8-{args.model_size} Training ({args.det_epochs} epochs)")
+            detector = WeedDetector(
+                model_size=args.model_size,
+                num_classes=len(CLASS_NAMES),
+                device=args.device,
+            )
+            yolo_out = str(out / "yolo")
+            t0 = time.time()
+            yolo_weights = detector.train(
+                dataset_yaml=yaml_path,
+                epochs=args.det_epochs,
+                imgsz=640,
+                batch=args.batch,
+                lr0=det_cfg.get("lr0", 0.01),
+                output_dir=yolo_out,
+                patience=det_cfg.get("patience", 20),
+                cos_lr=det_cfg.get("cos_lr", True),
+                mosaic=det_cfg.get("mosaic", 1.0),
+                mixup=det_cfg.get("mixup", 0.1),
+                hsv_h=det_cfg.get("hsv_h", 0.015),
+                hsv_s=det_cfg.get("hsv_s", 0.7),
+                hsv_v=det_cfg.get("hsv_v", 0.4),
+                fliplr=det_cfg.get("fliplr", 0.5),
+                flipud=det_cfg.get("flipud", 0.2),
+            )
+            print(f"  YOLOv8 done in {time.time()-t0:.0f}s  →  {yolo_weights}")
 
-        metrics = detector.validate(yaml_path)
-        print("\n  Validation:")
-        for k, v in metrics.items():
-            print(f"    {k}: {v:.4f}")
+            metrics = detector.validate(yaml_path)
+            print("\n  Validation:")
+            for k, v in metrics.items():
+                print(f"    {k}: {v:.4f}")
 
         # ── Stage 6: Train ResNeXt-50 ─────────────────────────────────────────
         step(f"Stage 6 — ResNeXt-50 Classifier ({args.cls_epochs} epochs)")
@@ -323,62 +329,66 @@ def main():
     # ── Stage 7: Inference + Distribution Maps ────────────────────────────────
     step("Stage 7 — Inference + Weed Distribution Maps")
 
-    # Prefer test split → val → train (in that order) so the distribution map
-    # is built from held-out data rather than training images.
-    if ds.test_imgs is not None:
-        infer_src   = ds.test_imgs
-        infer_split = "test"
-    elif ds.val_imgs is not None:
-        infer_src   = ds.val_imgs
-        infer_split = "val"
-    else:
-        infer_src   = ds.train_imgs
-        infer_split = "train"
-
-    print(f"  Inference split: '{infer_split}'  ({infer_src})")
-
-    img_paths = sorted(
-        list(infer_src.rglob("*.jpg")) + list(infer_src.rglob("*.png"))
-    )
-    total_avail = len(img_paths)
-    if args.max_infer > 0:
-        img_paths = img_paths[:args.max_infer]
-    if len(img_paths) < total_avail:
-        print(f"  NOTE: capped at {args.max_infer}/{total_avail} images "
-              f"(set --max_infer 0 for all)")
-    img_paths = [str(p) for p in img_paths]
-
-    # Locate multispectral files for the chosen split
-    if infer_split == "test":
-        ms_infer_dir = str(out / "multispectral" / "test")
-        if args.simulate_ms:
-            ds.generate_multispectral(ms_infer_dir, split="test")
-    elif infer_split == "val":
-        ms_infer_dir = ms_val
-    else:
-        ms_infer_dir = ms_train
-
-    ms_dir_p = Path(ms_infer_dir)
-    ms_paths = []
-    for ip in img_paths:
-        ms_p = ms_dir_p / f"{Path(ip).stem}_ms.npy"
-        ms_paths.append(str(ms_p) if ms_p.exists() else None)
-
-    print(f"  Running on {len(img_paths)} images…")
-    pipeline = WeedInferencePipeline(
-        yolo_weights=yolo_weights,
-        cls_weights=cls_weights,
-        class_names=CLASS_NAMES,
-        device=args.device,
-        det_conf=inf_cfg.get("det_conf", 0.25),
-        det_iou=inf_cfg.get("det_iou", 0.45),
-    )
-
     inf_out = str(out / "inference_results")
-    results = pipeline.run_batch(img_paths, ms_paths, output_dir=inf_out)
+    if args.skip_yolo:
+        print("  --skip_yolo: no YOLO detector — skipping inference & distribution maps.")
+        results = []
+    else:
+        # Prefer test split → val → train (in that order) so the distribution map
+        # is built from held-out data rather than training images.
+        if ds.test_imgs is not None:
+            infer_src   = ds.test_imgs
+            infer_split = "test"
+        elif ds.val_imgs is not None:
+            infer_src   = ds.val_imgs
+            infer_split = "val"
+        else:
+            infer_src   = ds.train_imgs
+            infer_split = "train"
 
-    total_inst = sum(len(r.instances) for r in results)
-    print(f"  {len(results)} images | {total_inst} weed instances detected")
+        print(f"  Inference split: '{infer_split}'  ({infer_src})")
+
+        img_paths = sorted(
+            list(infer_src.rglob("*.jpg")) + list(infer_src.rglob("*.png"))
+        )
+        total_avail = len(img_paths)
+        if args.max_infer > 0:
+            img_paths = img_paths[:args.max_infer]
+        if len(img_paths) < total_avail:
+            print(f"  NOTE: capped at {args.max_infer}/{total_avail} images "
+                  f"(set --max_infer 0 for all)")
+        img_paths = [str(p) for p in img_paths]
+
+        # Locate multispectral files for the chosen split
+        if infer_split == "test":
+            ms_infer_dir = str(out / "multispectral" / "test")
+            if args.simulate_ms:
+                ds.generate_multispectral(ms_infer_dir, split="test")
+        elif infer_split == "val":
+            ms_infer_dir = ms_val
+        else:
+            ms_infer_dir = ms_train
+
+        ms_dir_p = Path(ms_infer_dir)
+        ms_paths = []
+        for ip in img_paths:
+            ms_p = ms_dir_p / f"{Path(ip).stem}_ms.npy"
+            ms_paths.append(str(ms_p) if ms_p.exists() else None)
+
+        print(f"  Running on {len(img_paths)} images…")
+        pipeline = WeedInferencePipeline(
+            yolo_weights=yolo_weights,
+            cls_weights=cls_weights,
+            class_names=CLASS_NAMES,
+            device=args.device,
+            det_conf=inf_cfg.get("det_conf", 0.25),
+            det_iou=inf_cfg.get("det_iou", 0.45),
+        )
+
+        results = pipeline.run_batch(img_paths, ms_paths, output_dir=inf_out)
+
+        total_inst = sum(len(r.instances) for r in results)
+        print(f"  {len(results)} images | {total_inst} weed instances detected")
 
     mapper = WeedDistributionMapper(class_names=CLASS_NAMES)
     mapper.generate_all(results, output_dir=inf_out)
