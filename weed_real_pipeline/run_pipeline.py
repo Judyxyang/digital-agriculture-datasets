@@ -47,40 +47,19 @@ from pathlib import Path
 
 # ── Path setup ────────────────────────────────────────────────────────────────
 PIPELINE_DIR = Path(__file__).parent
-
-# weed_detection_demo may live alongside this repo or inside digital-agriculture-datasets
-def _find_demo() -> Path:
-    candidates = [
-        PIPELINE_DIR.parent / "weed_detection_demo",                          # same parent
-        PIPELINE_DIR.parent / "digital-agriculture-datasets" / "weed_detection_demo",
-        Path.home() / "weed" / "digital-agriculture-datasets" / "weed_detection_demo",
-        Path.home() / "digital-agriculture-datasets" / "weed_detection_demo",
-    ]
-    for c in candidates:
-        if (c / "models" / "yolov8_detector.py").exists():
-            return c
-    raise FileNotFoundError(
-        "Cannot find weed_detection_demo/. "
-        "Clone digital-agriculture-datasets alongside this repo, or set DEMO_PATH env var."
-    )
-
-_demo = Path(os.environ.get("DEMO_PATH", "")) if os.environ.get("DEMO_PATH") else _find_demo()
-sys.path.insert(0, str(_demo.parent))   # so `weed_detection_demo` is importable
-sys.path.insert(0, str(PIPELINE_DIR))   # so `data`, `preprocessing` etc are importable
+sys.path.insert(0, str(PIPELINE_DIR))   # data/, preprocessing/, models/, inference/
 
 import yaml
 
 from data.dataset_loader import LocalWeedDataset
-from preprocessing.preprocessing import (
-    RGBClassificationDataset, FUSION_MODES,
-)
-from weed_detection_demo.models.yolov8_detector import WeedDetector
-from weed_detection_demo.models.resnext50_classifier import (
+from preprocessing.preprocessing import RGBClassificationDataset, FUSION_MODES
+from models.yolov8_detector import WeedDetector
+from models.resnext50_classifier import (
     WeedClassifier, LabelSmoothingCrossEntropy,
     build_optimizer, build_scheduler, save_checkpoint,
 )
-from weed_detection_demo.inference.inference_pipeline import WeedInferencePipeline
-from weed_detection_demo.inference.distribution_map import WeedDistributionMapper
+from inference.inference_pipeline import WeedInferencePipeline
+from inference.distribution_map import WeedDistributionMapper
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
