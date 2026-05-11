@@ -38,9 +38,16 @@ import cv2
 import numpy as np
 import torch
 
-sys.path.insert(0, str(Path(__file__).parent.parent))
+_DEMO_ROOT = Path(__file__).parent.parent
+sys.path.insert(0, str(_DEMO_ROOT))
 
-from data.sample_generator import WEED_CLASSES, CLASS_COLORS_BGR
+# Default class names/colours — only loaded when sample_generator is available
+try:
+    from data.sample_generator import WEED_CLASSES, CLASS_COLORS_BGR
+except ModuleNotFoundError:
+    WEED_CLASSES = []
+    CLASS_COLORS_BGR = {}
+
 from preprocessing.rgb_preprocessing import DetectionPreprocessor
 from preprocessing.multispectral_preprocessing import MultispectralPreprocessor
 from models.yolov8_detector import WeedDetector, draw_detections
@@ -91,13 +98,13 @@ class WeedInferencePipeline:
         self,
         yolo_weights:  Optional[str],
         cls_weights:   Optional[str],
-        class_names:   List[str]     = WEED_CLASSES,
+        class_names:   Optional[List[str]] = None,
         device:        str           = "cpu",
         det_conf:      float         = 0.25,
         det_iou:       float         = 0.45,
         fusion_mode:   str           = "rgb_ndvi",
     ):
-        self.class_names = class_names
+        self.class_names = class_names if class_names is not None else WEED_CLASSES
         self.device      = device
         self.det_conf    = det_conf
         self.det_iou     = det_iou
