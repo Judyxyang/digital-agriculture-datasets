@@ -268,8 +268,11 @@ def main():
             for i in range(torch.cuda.device_count()):
                 print(f"  GPU {i}: {torch.cuda.get_device_name(i)}")
 
+        # build_optimizer / unfreeze_backbone need the inner model, not DataParallel wrapper
+        inner_model = model.module if isinstance(model, torch.nn.DataParallel) else model
+
         criterion = LabelSmoothingCrossEntropy(cls_cfg.get("label_smoothing", 0.1))
-        optimizer = build_optimizer(model, lr=cls_cfg.get("lr_head", 1e-3))
+        optimizer = build_optimizer(inner_model, lr=cls_cfg.get("lr_head", 1e-3))
         scheduler = build_scheduler(optimizer, args.cls_epochs,
                                     warmup_epochs=cls_cfg.get("warmup_epochs", 5))
 
@@ -281,10 +284,10 @@ def main():
         t0 = time.time()
         for epoch in range(1, args.cls_epochs + 1):
             if epoch == WARMUP + 1:
-                model.unfreeze_backbone(layers_from_end=2)
+                inner_model.unfreeze_backbone(layers_from_end=2)
                 train_p = sum(p.numel() for p in model.parameters() if p.requires_grad)
                 print(f"\n  Phase 2: backbone partially unfrozen. Trainable: {train_p:,}")
-                optimizer = build_optimizer(model, lr=cls_cfg.get("lr_backbone", 1e-4))
+                optimizer = build_optimizer(inner_model, lr=cls_cfg.get("lr_backbone", 1e-4))
                 scheduler = build_scheduler(optimizer,
                                             args.cls_epochs - WARMUP, warmup_epochs=0)
 
@@ -310,7 +313,7 @@ def main():
 
             if val_acc >= best_acc:
                 best_acc = val_acc
-                save_checkpoint(model, optimizer, epoch, val_acc, cls_ckpt)
+                save_checkpoint(inner_model, optimizer, epoch, val_acc, cls_ckpt)
 
         print(f"\n  ResNeXt-50 done in {time.time()-t0:.0f}s")
         print(f"  Best val acc: {best_acc:.4f}  →  {cls_ckpt}")
