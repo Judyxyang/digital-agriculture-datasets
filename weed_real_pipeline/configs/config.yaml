@@ -1,0 +1,60 @@
+# ── Real-data weed detection pipeline configuration ──────────────────────────
+#
+# Edit this file to tune the pipeline without touching any Python code.
+# All paths are resolved relative to the working directory unless absolute.
+
+dataset:
+  # Point at your local YOLO-format dataset root
+  root: "../weed_archive_detection"      # relative to repo root, or use absolute
+  output_dir: "outputs/real_run"
+
+# ── Multispectral ─────────────────────────────────────────────────────────────
+multispectral:
+  # Set to false if real 5-band imagery is available (load .npy directly)
+  simulate: true
+  num_bands: 5                           # 3 (RGB only) or 5 (R,G,B,NIR,RE)
+  # Fusion mode for 5-band → 3-channel conversion fed into pretrained backbone
+  # Options: rgb | rgb_ndvi | all5 | vi_stack
+  # Use "all5" with in_channels=5 in model when real 5-band data is available
+  fusion_mode: "rgb_ndvi"
+
+# ── Detection (YOLOv8) ────────────────────────────────────────────────────────
+detection:
+  model_size: "n"            # n | s | m | l | x
+  epochs: 50
+  batch: 16
+  imgsz: 640
+  lr0: 0.01
+  patience: 20
+  cos_lr: true
+  # Augmentation
+  mosaic: 1.0
+  mixup: 0.1
+  hsv_h: 0.015
+  hsv_s: 0.7
+  hsv_v: 0.4
+  fliplr: 0.5
+  flipud: 0.2
+
+# ── Classification (ResNeXt-50) ───────────────────────────────────────────────
+classification:
+  epochs: 30
+  batch: 32
+  img_size: 224
+  crop_size: 96              # pixel size of extracted weed crop patches
+  lr_head: 1.0e-3
+  lr_backbone: 1.0e-4
+  dropout: 0.3
+  warmup_epochs: 5
+  label_smoothing: 0.1
+  # in_channels: 3 for rgb/rgb_ndvi/vi_stack; 5 for all5
+  in_channels: 3
+
+# ── Inference ─────────────────────────────────────────────────────────────────
+inference:
+  det_conf: 0.25
+  det_iou: 0.45
+  max_images: 50             # cap for demo; set to 0 for unlimited
+
+# ── Hardware ──────────────────────────────────────────────────────────────────
+device: "cpu"               # cpu | cuda | mps
