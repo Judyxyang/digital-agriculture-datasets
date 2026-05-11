@@ -1,33 +1,30 @@
 """
-Local YOLO-format weed dataset loader.
+Weed dataset loaders.
 
-Designed for any locally-available YOLO-format dataset, including:
-  - weed_archive_detection (5-class, 958/274/138 split)
-  - Any dataset exported from Roboflow, CVAT, or Label Studio in YOLO format
+  LocalWeedDataset    — YOLO-format datasets (images/ + labels/ folders)
+  DeepWeedsDataset    — DeepWeeds CSV-format (flat images/ + labels.csv)
 
-Expected layout
-───────────────
+Expected layout — YOLO format
+───────────────────────────────
   <dataset_root>/
-    data.yaml          ← class names + split paths
-    images/
-      train/   *.jpg / *.png
-      valid/   *.jpg / *.png   (or val/)
-      test/    *.jpg / *.png   (optional)
-    labels/
-      train/   *.txt
-      valid/   *.txt
-      test/    *.txt
+    data.yaml
+    images/  train/  valid/  test/
+    labels/  train/  valid/  test/
+
+Expected layout — DeepWeeds CSV format
+────────────────────────────────────────
+  <dataset_root>/
+    labels.csv          ← columns: Filename, Label, Species
+    images/  *.jpg      ← all images in one flat directory
 
 Usage
 ─────
-  from data.dataset_loader import LocalWeedDataset
-  ds = LocalWeedDataset("/path/to/weed_archive_detection")
-  print(ds.stats())
-  yaml_path = ds.write_yaml()            # fixes absolute paths for YOLO trainer
-  ds.generate_multispectral("ms/train")  # simulate 5-band arrays if needed
-  ds.extract_crops("crops/train")        # per-class patches for classifier
+  from data.dataset_loader import LocalWeedDataset, DeepWeedsDataset
+  ds = DeepWeedsDataset("/path/to/deepweeds")
+  ds.extract_crops("crops/train", split="train")   # copies full images per class
 """
 
+import csv
 import shutil
 import yaml
 from pathlib import Path
@@ -326,6 +323,239 @@ class LocalWeedDataset:
                 n_saved += 1
 
         print(f"[Crops] Extracted {n_saved} crops → {out}")
+
+
+# ── DeepWeeds CSV dataset ─────────────────────────────────────────────────────
+
+# Standard DeepWeeds class ordering (Olsen et al., 2019)
+DEEPWEEDS_CLASSES = [
+    "Chinee apple",
+    "Lantana",
+    "Parkinsonia",
+    "Parthenium",
+    "Prickly acacia",
+    "Rubber vine",
+    "Siam weed",
+    "Snake weed",
+    "Negative",
+]
+
+
+class DeepWeedsDataset:
+    """
+    Adapter for the DeepWeeds dataset (Olsen et al., 2019).
+
+    Layout expected
+    ───────────────
+      <root>/
+        labels.csv      ← Filename, Label, Species
+        images/         ← flat directory of all 17,509 .jpg images
+
+    The dataset is split 60/20/20 (train/val/test) using a stratified
+    random split seeded for reproducibility.  A split cache is written
+    to <root>/splits.csv on first run so results are deterministic.
+    """
+
+    SPLIT_SEED = 42
+
+    def __init__(self, root: str):
+        self.root = Path(root).resolve()
+        self._load()
+
+    def _load(self):
+        # Locate CSV
+        csv_candidates = list(self.root.glob("*.csv"))
+        if not csv_candidates:
+            raise FileNotFoundError(f"No CSV file found in {self.root}")
+        # Prefer labels.csv, otherwise take first
+        csv_path = next((p for p in csv_candidates if p.stem.lower() == "labels"),
+                        csv_candidates[0])
+
+        # Locate images directory
+        img_dir = self.root / "images"
+        if not img_dir.exists():
+            # Try flat root
+            img_dir = self.root
+
+        # Read CSV — handle Filename / filename column name variants
+        rows = []
+        with open(csv_path, newline="") as f:
+            reader = csv.DictReader(f)
+            headers = [h.strip() for h in (reader.fieldnames or [])]
+            filename_col = next((h for h in headers if h.lower() == "filename"), None)
+            label_col    = next((h for h in headers if h.lower() == "label"),    None)
+            species_col  = next((h for h in headers if h.lower() == "species"),  None)
+            if filename_col is None or label_col is None:
+                raise ValueError(
+                    f"CSV must have 'Filename' and 'Label' columns. Found: {headers}"
+                )
+            for row in reader:
+                fname  = row[filename_col].strip()
+                label  = int(row[label_col])
+                species = row[species_col].strip() if species_col else None
+                img_p  = img_dir / fname
+                if img_p.exists():
+                    rows.append((fname, label, species, img_p))
+
+        if not rows:
+            raise FileNotFoundError(
+                f"No matching images found. CSV has {csv_path} but images not in {img_dir}"
+            )
+
+        # Derive class names from species column or fall back to DEEPWEEDS_CLASSES
+        if rows[0][2] is not None:
+            id_to_name: Dict[int, str] = {}
+            for _, lbl, species, _ in rows:
+                id_to_name.setdefault(lbl, species)
+            max_id = max(id_to_name)
+            self.class_names: List[str] = [
+                id_to_name.get(i, f"class_{i}") for i in range(max_id + 1)
+            ]
+        else:
+            self.class_names = DEEPWEEDS_CLASSES
+
+        # Stratified 60/20/20 split
+        split_cache = self.root / "splits.csv"
+        if split_cache.exists():
+            splits: Dict[str, str] = {}
+            with open(split_cache, newline="") as f:
+                for row in csv.DictReader(f):
+                    splits[row["Filename"]] = row["Split"]
+        else:
+            import random
+            rng = random.Random(self.SPLIT_SEED)
+            # Group by label for stratification
+            by_label: Dict[int, list] = {}
+            for fname, lbl, _, _ in rows:
+                by_label.setdefault(lbl, []).append(fname)
+            splits = {}
+            for lbl, fnames in by_label.items():
+                shuffled = fnames[:]
+                rng.shuffle(shuffled)
+                n = len(shuffled)
+                n_val  = max(1, int(n * 0.20))
+                n_test = max(1, int(n * 0.20))
+                for i, fn in enumerate(shuffled):
+                    if i < n_val:
+                        splits[fn] = "val"
+                    elif i < n_val + n_test:
+                        splits[fn] = "test"
+                    else:
+                        splits[fn] = "train"
+            # Write cache
+            with open(split_cache, "w", newline="") as f:
+                w = csv.writer(f)
+                w.writerow(["Filename", "Split"])
+                for fn, sp in splits.items():
+                    w.writerow([fn, sp])
+            print(f"[DeepWeeds] Split cache written → {split_cache}")
+
+        self._train_rows = [(fn, lbl, ip) for fn, lbl, _, ip in rows if splits.get(fn) == "train"]
+        self._val_rows   = [(fn, lbl, ip) for fn, lbl, _, ip in rows if splits.get(fn) == "val"]
+        self._test_rows  = [(fn, lbl, ip) for fn, lbl, _, ip in rows if splits.get(fn) == "test"]
+
+        # Expose None for YOLO-specific attributes so pipeline stages skip gracefully
+        self.train_imgs   = None
+        self.val_imgs     = None
+        self.test_imgs    = None
+        self.train_labels = None
+        self.val_labels   = None
+        self.test_labels  = None
+        self.yaml_path    = None
+
+        print(f"[DeepWeeds] Root       : {self.root}")
+        print(f"[DeepWeeds] Classes    : {len(self.class_names)} — {self.class_names}")
+        print(f"[DeepWeeds] Train      : {len(self._train_rows)} images")
+        print(f"[DeepWeeds] Val        : {len(self._val_rows)} images")
+        print(f"[DeepWeeds] Test       : {len(self._test_rows)} images")
+
+    def stats(self) -> Dict:
+        return {
+            "num_classes":  len(self.class_names),
+            "class_names":  self.class_names,
+            "train_images": len(self._train_rows),
+            "val_images":   len(self._val_rows),
+            "test_images":  len(self._test_rows),
+        }
+
+    def write_yaml(self, output_path: Optional[str] = None) -> str:
+        """Write a minimal data.yaml stub (no image dirs — used as placeholder)."""
+        if output_path is None:
+            output_path = str(self.root / "data.yaml")
+        content = {
+            "path":  str(self.root),
+            "train": "",
+            "val":   "",
+            "nc":    len(self.class_names),
+            "names": self.class_names,
+        }
+        with open(output_path, "w") as f:
+            yaml.dump(content, f, default_flow_style=False, sort_keys=False)
+        self.yaml_path = output_path
+        print(f"[DeepWeeds] data.yaml stub → {output_path}")
+        return output_path
+
+    def generate_multispectral(self, output_dir: str, split: str = "train",
+                                num_bands: int = 5):
+        """Simulate 5-band MS arrays from RGB for classification training."""
+        import cv2
+        rows = (self._train_rows if split == "train" else
+                self._val_rows   if split == "val"   else self._test_rows)
+        out = Path(output_dir)
+        out.mkdir(parents=True, exist_ok=True)
+        print(f"[MS] Simulating {num_bands}-band MS for {len(rows)} '{split}' images…")
+        for fn, _, img_path in rows:
+            img_bgr = cv2.imread(str(img_path))
+            if img_bgr is None:
+                continue
+            img_rgb = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB)
+            rgb_f   = img_rgb.astype(np.float32) / 255.0
+            r, g, b = rgb_f[..., 0], rgb_f[..., 1], rgb_f[..., 2]
+            nir = np.clip(g * 1.4 + np.random.normal(0, 0.05, g.shape), 0, 1).astype(np.float32)
+            re  = np.clip((nir + r) / 2 + np.random.normal(0, 0.03, r.shape), 0, 1).astype(np.float32)
+            ms  = np.stack([r, g, b, nir, re], axis=-1) if num_bands == 5 else np.stack([r, g, b], axis=-1)
+            np.save(str(out / f"{Path(fn).stem}_ms.npy"), ms)
+        print(f"[MS] Saved → {out}")
+
+    def extract_crops(self, output_dir: str, split: str = "train",
+                      crop_size: int = 96):
+        """
+        For DeepWeeds the full image IS the crop (image-level classification).
+        Copies/resizes images into per-class folders:
+          <output_dir>/<class_name>/*.jpg
+        """
+        import cv2
+        rows = (self._train_rows if split == "train" else
+                self._val_rows   if split == "val"   else self._test_rows)
+        out = Path(output_dir)
+        for cls_name in self.class_names:
+            (out / cls_name).mkdir(parents=True, exist_ok=True)
+
+        n_saved = 0
+        for fn, lbl, img_path in rows:
+            cls_name = (self.class_names[lbl]
+                        if lbl < len(self.class_names) else f"class_{lbl}")
+            img_bgr = cv2.imread(str(img_path))
+            if img_bgr is None:
+                continue
+            img_resized = cv2.resize(img_bgr, (crop_size, crop_size))
+            save_path = out / cls_name / Path(fn).name
+            cv2.imwrite(str(save_path), img_resized)
+            n_saved += 1
+
+        print(f"[DeepWeeds] Organised {n_saved} '{split}' images → {out}")
+
+
+def load_dataset(root: str) -> "LocalWeedDataset | DeepWeedsDataset":
+    """
+    Auto-detect dataset type:
+      - If a *.csv file is present → DeepWeedsDataset
+      - Otherwise → LocalWeedDataset (YOLO format)
+    """
+    root_p = Path(root).resolve()
+    if list(root_p.glob("*.csv")):
+        return DeepWeedsDataset(root)
+    return LocalWeedDataset(root)
 
 
 # ── CLI ───────────────────────────────────────────────────────────────────────

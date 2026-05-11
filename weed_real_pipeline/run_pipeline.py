@@ -51,7 +51,7 @@ sys.path.insert(0, str(PIPELINE_DIR))   # data/, preprocessing/, models/, infere
 
 import yaml
 
-from data.dataset_loader import LocalWeedDataset
+from data.dataset_loader import load_dataset
 from preprocessing.preprocessing import RGBClassificationDataset, FUSION_MODES
 from models.yolov8_detector import WeedDetector
 from models.resnext50_classifier import (
@@ -129,7 +129,7 @@ def main():
 
     # ── Stage 1: Load dataset ─────────────────────────────────────────────────
     step("Stage 1 — Load & Validate Dataset")
-    ds    = LocalWeedDataset(str(ds_dir))
+    ds    = load_dataset(str(ds_dir))
     stats = ds.stats()
     print(f"\n  Classes ({stats['num_classes']}): {stats['class_names']}")
     print(f"  Train : {stats['train_images']} images")
