@@ -77,17 +77,6 @@ def _infer_classes(labels_dir: Path) -> List[str]:
 class LocalWeedDataset:
     """
     Adapter for any locally-stored YOLO-format weed dataset.
-
-    Attributes
-    ----------
-    root         : dataset root Path
-    class_names  : ordered list of class name strings
-    yaml_path    : path to data.yaml (absolute-path version for YOLO trainer)
-    train_imgs   : Path to training images
-    val_imgs     : Path to validation images
-    test_imgs    : Path to test images (may be None)
-    train_labels : Path to training label txts
-    val_labels   : Path to validation label txts
     """
 
     def __init__(self, root: str):
@@ -102,7 +91,6 @@ class LocalWeedDataset:
                 cfg = yaml.safe_load(f)
             names = cfg.get("names")
             if isinstance(names, dict):
-                # ultralytics ≥8.1 stores names as {0: "class", 1: ...}
                 names = [names[i] for i in sorted(names)]
             self.class_names: List[str] = names or [f"class_{i}" for i in range(cfg.get("nc", 1))]
             self.yaml_path = str(yaml_p)
@@ -126,20 +114,16 @@ class LocalWeedDataset:
         def _labels_dir(imgs: Optional[Path]) -> Optional[Path]:
             if imgs is None:
                 return None
-            # Case 1: path contains "images" → swap to "labels"
             if "images" in str(imgs):
                 lbl = Path(str(imgs).replace("images", "labels"))
                 if lbl.exists():
                     return lbl
-            # Case 2: labels/ sibling of the split dir (e.g. train/../labels/train)
             lbl = imgs.parent / "labels" / imgs.name
             if lbl.exists():
                 return lbl
-            # Case 3: labels/ inside the split dir (e.g. train/labels/)
             lbl = imgs / "labels"
             if lbl.exists():
                 return lbl
-            # Case 4: .txt files are in the same folder as images
             if any(imgs.glob("*.txt")):
                 return imgs
             return None
@@ -160,14 +144,11 @@ class LocalWeedDataset:
         print(f"[Dataset] Test imgs   : {self.test_imgs}")
         print(f"[Dataset] Train labels: {self.train_labels}")
 
-    # ── Stats ─────────────────────────────────────────────────────────────────
-
     def stats(self) -> Dict:
         def _count(d: Optional[Path]) -> int:
             if d is None:
                 return 0
             return len(list(d.rglob("*.jpg")) + list(d.rglob("*.png")))
-
         return {
             "num_classes":   len(self.class_names),
             "class_names":   self.class_names,
@@ -176,13 +157,7 @@ class LocalWeedDataset:
             "test_images":   _count(self.test_imgs),
         }
 
-    # ── Write / fix data.yaml with absolute paths ─────────────────────────────
-
     def write_yaml(self, output_path: Optional[str] = None) -> str:
-        """
-        Write data.yaml with absolute paths so ultralytics can find
-        the data regardless of working directory.
-        """
         if output_path is None:
             output_path = str(self.root / "data.yaml")
 
@@ -211,34 +186,18 @@ class LocalWeedDataset:
         print(f"[Dataset] data.yaml written → {output_path}")
         return output_path
 
-    # ── Multispectral simulation (for RGB-only datasets) ─────────────────────
-
     def generate_multispectral(self, output_dir: str, split: str = "train",
                                 num_bands: int = 5):
-        """
-        Simulate a 5-band multispectral array from RGB for each image.
-
-        Bands: [R, G, B, NIR, RedEdge]
-          NIR      = G × 1.4 + N(0, 0.05)   (green channel correlates with NIR)
-          RedEdge  = (NIR + R) / 2 + N(0, 0.03)
-
-        When real multispectral data is available, replace this with a loader
-        that reads .tif / .npy files directly (see note in README).
-        """
         import cv2
-
         src = self.train_imgs if split == "train" else (
               self.val_imgs   if split == "val"   else self.test_imgs)
         if src is None:
             print(f"[MS] No images for split '{split}'")
             return
-
         out = Path(output_dir)
         out.mkdir(parents=True, exist_ok=True)
-
         img_files = list(src.rglob("*.jpg")) + list(src.rglob("*.png"))
         print(f"[MS] Simulating {num_bands}-band MS for {len(img_files)} '{split}' images…")
-
         for img_path in img_files:
             img_bgr = cv2.imread(str(img_path))
             if img_bgr is None:
@@ -246,74 +205,53 @@ class LocalWeedDataset:
             img_rgb = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB)
             rgb_f   = img_rgb.astype(np.float32) / 255.0
             r, g, b = rgb_f[..., 0], rgb_f[..., 1], rgb_f[..., 2]
-
             nir = np.clip(g * 1.4 + np.random.normal(0, 0.05, g.shape), 0, 1).astype(np.float32)
             re  = np.clip((nir + r) / 2 + np.random.normal(0, 0.03, r.shape), 0, 1).astype(np.float32)
-
             if num_bands == 5:
                 ms = np.stack([r, g, b, nir, re], axis=-1)
             elif num_bands == 3:
                 ms = np.stack([r, g, b], axis=-1)
             else:
                 raise ValueError(f"num_bands must be 3 or 5, got {num_bands}")
-
             np.save(str(out / f"{img_path.stem}_ms.npy"), ms.astype(np.float32))
-
         print(f"[MS] Saved {len(img_files)} arrays → {out}")
-
-    # ── Classification crop extraction ────────────────────────────────────────
 
     def extract_crops(self, output_dir: str, split: str = "train",
                       crop_size: int = 96):
-        """
-        Extract per-class weed crop patches from YOLO bounding box labels.
-        Creates a folder-per-class layout:
-          <output_dir>/<class_name>/*.png
-        """
         import cv2
-
         src_imgs = (self.train_imgs if split == "train" else
                     self.val_imgs   if split == "val"   else self.test_imgs)
         src_lbls = (self.train_labels if split == "train" else
                     self.val_labels   if split == "val"   else self.test_labels)
-
         if src_imgs is None or src_lbls is None:
             print(f"[Crops] Missing images or labels for split '{split}'")
             return
-
         out = Path(output_dir)
         for cls_name in self.class_names:
             (out / cls_name).mkdir(parents=True, exist_ok=True)
-
         img_files = list(src_imgs.rglob("*.jpg")) + list(src_imgs.rglob("*.png"))
         n_saved = 0
-
         for img_path in img_files:
             lbl_path = src_lbls / (img_path.stem + ".txt")
             if not lbl_path.exists():
                 continue
-
             img_bgr = cv2.imread(str(img_path))
             if img_bgr is None:
                 continue
             h, w = img_bgr.shape[:2]
-
             for line in lbl_path.read_text().splitlines():
                 parts = line.strip().split()
                 if len(parts) < 5:
                     continue
                 cls_id = int(parts[0])
                 cx_n, cy_n, bw_n, bh_n = map(float, parts[1:5])
-
                 x1 = max(0, int((cx_n - bw_n / 2) * w))
                 y1 = max(0, int((cy_n - bh_n / 2) * h))
                 x2 = min(w, int((cx_n + bw_n / 2) * w))
                 y2 = min(h, int((cy_n + bh_n / 2) * h))
-
                 crop = img_bgr[y1:y2, x1:x2]
                 if crop.size == 0:
                     continue
-
                 cls_name = (self.class_names[cls_id]
                             if cls_id < len(self.class_names)
                             else f"class_{cls_id}")
@@ -321,13 +259,11 @@ class LocalWeedDataset:
                 save_path = out / cls_name / f"{img_path.stem}_{n_saved}.png"
                 cv2.imwrite(str(save_path), crop_resized)
                 n_saved += 1
-
         print(f"[Crops] Extracted {n_saved} crops → {out}")
 
 
 # ── DeepWeeds CSV dataset ─────────────────────────────────────────────────────
 
-# Standard DeepWeeds class ordering (Olsen et al., 2019)
 DEEPWEEDS_CLASSES = [
     "Chinee apple",
     "Lantana",
@@ -351,9 +287,8 @@ class DeepWeedsDataset:
         labels.csv      ← Filename, Label, Species
         images/         ← flat directory of all 17,509 .jpg images
 
-    The dataset is split 60/20/20 (train/val/test) using a stratified
-    random split seeded for reproducibility.  A split cache is written
-    to <root>/splits.csv on first run so results are deterministic.
+    Stratified 60/20/20 train/val/test split, seeded for reproducibility.
+    Split cache written to <root>/splits.csv on first run.
     """
 
     SPLIT_SEED = 42
@@ -363,21 +298,16 @@ class DeepWeedsDataset:
         self._load()
 
     def _load(self):
-        # Locate CSV
         csv_candidates = list(self.root.glob("*.csv"))
         if not csv_candidates:
             raise FileNotFoundError(f"No CSV file found in {self.root}")
-        # Prefer labels.csv, otherwise take first
         csv_path = next((p for p in csv_candidates if p.stem.lower() == "labels"),
                         csv_candidates[0])
 
-        # Locate images directory
         img_dir = self.root / "images"
         if not img_dir.exists():
-            # Try flat root
             img_dir = self.root
 
-        # Read CSV — handle Filename / filename column name variants
         rows = []
         with open(csv_path, newline="") as f:
             reader = csv.DictReader(f)
@@ -390,19 +320,18 @@ class DeepWeedsDataset:
                     f"CSV must have 'Filename' and 'Label' columns. Found: {headers}"
                 )
             for row in reader:
-                fname  = row[filename_col].strip()
-                label  = int(row[label_col])
+                fname   = row[filename_col].strip()
+                label   = int(row[label_col])
                 species = row[species_col].strip() if species_col else None
-                img_p  = img_dir / fname
+                img_p   = img_dir / fname
                 if img_p.exists():
                     rows.append((fname, label, species, img_p))
 
         if not rows:
             raise FileNotFoundError(
-                f"No matching images found. CSV has {csv_path} but images not in {img_dir}"
+                f"No matching images found. CSV: {csv_path}, images dir: {img_dir}"
             )
 
-        # Derive class names from species column or fall back to DEEPWEEDS_CLASSES
         if rows[0][2] is not None:
             id_to_name: Dict[int, str] = {}
             for _, lbl, species, _ in rows:
@@ -414,7 +343,6 @@ class DeepWeedsDataset:
         else:
             self.class_names = DEEPWEEDS_CLASSES
 
-        # Stratified 60/20/20 split
         split_cache = self.root / "splits.csv"
         if split_cache.exists():
             splits: Dict[str, str] = {}
@@ -424,7 +352,6 @@ class DeepWeedsDataset:
         else:
             import random
             rng = random.Random(self.SPLIT_SEED)
-            # Group by label for stratification
             by_label: Dict[int, list] = {}
             for fname, lbl, _, _ in rows:
                 by_label.setdefault(lbl, []).append(fname)
@@ -442,7 +369,6 @@ class DeepWeedsDataset:
                         splits[fn] = "test"
                     else:
                         splits[fn] = "train"
-            # Write cache
             with open(split_cache, "w", newline="") as f:
                 w = csv.writer(f)
                 w.writerow(["Filename", "Split"])
@@ -454,7 +380,6 @@ class DeepWeedsDataset:
         self._val_rows   = [(fn, lbl, ip) for fn, lbl, _, ip in rows if splits.get(fn) == "val"]
         self._test_rows  = [(fn, lbl, ip) for fn, lbl, _, ip in rows if splits.get(fn) == "test"]
 
-        # Expose None for YOLO-specific attributes so pipeline stages skip gracefully
         self.train_imgs   = None
         self.val_imgs     = None
         self.test_imgs    = None
@@ -479,7 +404,6 @@ class DeepWeedsDataset:
         }
 
     def write_yaml(self, output_path: Optional[str] = None) -> str:
-        """Write a minimal data.yaml stub (no image dirs — used as placeholder)."""
         if output_path is None:
             output_path = str(self.root / "data.yaml")
         content = {
@@ -497,7 +421,6 @@ class DeepWeedsDataset:
 
     def generate_multispectral(self, output_dir: str, split: str = "train",
                                 num_bands: int = 5):
-        """Simulate 5-band MS arrays from RGB for classification training."""
         import cv2
         rows = (self._train_rows if split == "train" else
                 self._val_rows   if split == "val"   else self._test_rows)
@@ -521,8 +444,7 @@ class DeepWeedsDataset:
                       crop_size: int = 96):
         """
         For DeepWeeds the full image IS the crop (image-level classification).
-        Copies/resizes images into per-class folders:
-          <output_dir>/<class_name>/*.jpg
+        Copies/resizes images into per-class folders.
         """
         import cv2
         rows = (self._train_rows if split == "train" else
@@ -530,7 +452,6 @@ class DeepWeedsDataset:
         out = Path(output_dir)
         for cls_name in self.class_names:
             (out / cls_name).mkdir(parents=True, exist_ok=True)
-
         n_saved = 0
         for fn, lbl, img_path in rows:
             cls_name = (self.class_names[lbl]
@@ -542,7 +463,6 @@ class DeepWeedsDataset:
             save_path = out / cls_name / Path(fn).name
             cv2.imwrite(str(save_path), img_resized)
             n_saved += 1
-
         print(f"[DeepWeeds] Organised {n_saved} '{split}' images → {out}")
 
 
@@ -570,7 +490,7 @@ if __name__ == "__main__":
     p.add_argument("--output_dir",     default="outputs/real_data")
     args = p.parse_args()
 
-    ds = LocalWeedDataset(args.dataset_dir)
+    ds = load_dataset(args.dataset_dir)
     stats = ds.stats()
     print("\n[Stats]")
     for k, v in stats.items():
