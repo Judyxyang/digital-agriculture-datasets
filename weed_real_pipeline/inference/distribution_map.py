@@ -44,8 +44,31 @@ from inference.inference_pipeline import WeedInstance, ImageResult
 WEED_CLASSES: list = []
 CLASS_COLORS_BGR: dict = {}
 
+# Distinct palette for up to 10 species (RGB 0-1 floats)
+_SPECIES_PALETTE: List[Tuple[float,float,float]] = [
+    (0.22, 0.71, 0.29),   # green        – class 0
+    (0.99, 0.55, 0.14),   # orange       – class 1
+    (0.21, 0.63, 0.86),   # sky blue     – class 2
+    (0.93, 0.23, 0.29),   # red          – class 3
+    (0.77, 0.40, 0.86),   # violet       – class 4
+    (1.00, 0.90, 0.20),   # yellow       – class 5
+    (0.24, 0.87, 0.81),   # cyan         – class 6
+    (0.95, 0.46, 0.68),   # pink         – class 7
+    (0.60, 0.80, 0.20),   # lime         – class 8
+    (0.90, 0.65, 0.40),   # tan          – class 9
+]
 
-# ── Colour helpers ────────────────────────────────────────────────────────────
+def _species_color(class_name: str,
+                   class_names: Optional[List[str]] = None) -> Tuple[float,float,float]:
+    """Return a consistent distinct color for a species name."""
+    if class_names and class_name in class_names:
+        idx = class_names.index(class_name)
+        return _SPECIES_PALETTE[idx % len(_SPECIES_PALETTE)]
+    idx = abs(hash(class_name)) % len(_SPECIES_PALETTE)
+    return _SPECIES_PALETTE[idx]
+
+
+# ── Colour helpers ───────────────────────────────────────────────────────────────
 
 def bgr_to_rgb_f(bgr: Tuple[int,int,int]) -> Tuple[float,float,float]:
     return bgr[2]/255, bgr[1]/255, bgr[0]/255
@@ -61,10 +84,9 @@ GREEN_HEATMAP = LinearSegmentedColormap.from_list(
 )
 
 
-# ── Mosaic layout ─────────────────────────────────────────────────────────────
+# ── Mosaic layout ─────────────────────────────────────────────────────────────────
 
 def _tile_layout(n_images: int) -> Tuple[int, int]:
-    """Return (n_cols, n_rows) for a roughly square tile grid."""
     n_cols = int(np.ceil(np.sqrt(n_images)))
     n_rows = int(np.ceil(n_images / n_cols))
     return n_cols, n_rows
@@ -75,17 +97,11 @@ def _global_coords(
     image_ids: List[str],
     n_cols: int, n_rows: int,
 ) -> List[Tuple[float, float, WeedInstance]]:
-    """
-    Map per-image normalised (cx, cy) → global field coordinates in [0, 1]².
-
-    Each image occupies a 1/n_cols × 1/n_rows cell in the virtual field.
-    """
     id_to_cell: Dict[str, Tuple[int, int]] = {}
     for idx, img_id in enumerate(image_ids):
         col = idx % n_cols
         row = idx // n_cols
         id_to_cell[img_id] = (col, row)
-
     coords = []
     for inst in instances:
         col, row = id_to_cell.get(inst.image_id, (0, 0))
@@ -95,15 +111,13 @@ def _global_coords(
     return coords
 
 
-# ── Map generators ────────────────────────────────────────────────────────────
+# ── Map generators ─────────────────────────────────────────────────────────────────
 
 class WeedDistributionMapper:
 
     def __init__(self, class_names: List[str] = WEED_CLASSES, grid_px: int = 256):
         self.class_names = class_names
         self.grid_px     = grid_px
-
-    # ── 1. Overall density heatmap ────────────────────────────────────────────
 
     def density_heatmap(
         self,
@@ -113,22 +127,16 @@ class WeedDistributionMapper:
     ):
         G = self.grid_px
         density = np.zeros((G, G), dtype=np.float32)
-
         for gx, gy, inst in global_coords:
             px = int(np.clip(gx * G, 0, G - 1))
             py = int(np.clip(gy * G, 0, G - 1))
             density[py, px] += inst.confidence
-
         density_smooth = gaussian_filter(density, sigma=sigma)
-
         fig, ax = plt.subplots(figsize=(8, 7))
-        im = ax.imshow(
-            density_smooth, origin="upper", cmap=GREEN_HEATMAP,
-            extent=[0, 1, 1, 0], interpolation="bilinear"
-        )
+        im = ax.imshow(density_smooth, origin="upper", cmap=GREEN_HEATMAP,
+                       extent=[0, 1, 1, 0], interpolation="bilinear")
         cbar = fig.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
         cbar.set_label("Weighted detection density", fontsize=11)
-
         ax.set_title("Overall Weed Density Heatmap", fontsize=14, fontweight="bold", pad=12)
         ax.set_xlabel("Field X (normalised)", fontsize=11)
         ax.set_ylabel("Field Y (normalised)", fontsize=11)
@@ -136,13 +144,10 @@ class WeedDistributionMapper:
         ax.set_yticks(np.linspace(0, 1, 6))
         ax.tick_params(labelsize=9)
         ax.grid(color="white", alpha=0.15, linewidth=0.5)
-
         plt.tight_layout()
         plt.savefig(output_path, dpi=150, bbox_inches="tight")
         plt.close()
         print(f"  [Map] Density heatmap → {output_path}")
-
-    # ── 2. Per-species category dot map ──────────────────────────────────────
 
     def category_map(
         self,
@@ -156,7 +161,6 @@ class WeedDistributionMapper:
         ax.set_facecolor("#1a1a1a")
         fig.patch.set_facecolor("#111111")
 
-        # Background field outline
         field_rect = mpatches.FancyBboxPatch(
             (0, 0), 1, 1, linewidth=1.5, edgecolor="#888888",
             facecolor="none", boxstyle="round,pad=0.01"
@@ -164,16 +168,15 @@ class WeedDistributionMapper:
         ax.add_patch(field_rect)
 
         for gx, gy, inst in global_coords:
-            color = CLASS_RGB_F.get(inst.class_name, (0, 1, 0))
+            color = _species_color(inst.class_name, self.class_names)
             radius = 0.006 + inst.confidence * 0.008
             circle = plt.Circle((gx, gy), radius, color=color,
-                                 alpha=0.75, linewidth=0)
+                                 alpha=0.85, linewidth=0)
             ax.add_patch(circle)
 
-        # Legend
         legend_patches = []
         for cls_name in present_classes:
-            color = CLASS_RGB_F.get(cls_name, (0, 1, 0))
+            color = _species_color(cls_name, self.class_names)
             cnt   = counts[cls_name]
             patch = mpatches.Patch(color=color, label=f"{cls_name} (n={cnt})")
             legend_patches.append(patch)
@@ -195,19 +198,14 @@ class WeedDistributionMapper:
         ax.tick_params(colors="#aaaaaa", labelsize=9)
         for spine in ax.spines.values():
             spine.set_color("#444444")
-
-        total = len(global_coords)
-        ax.text(0.02, 0.97, f"Total detections: {total}",
+        ax.text(0.02, 0.97, f"Total detections: {len(global_coords)}",
                 transform=ax.transAxes, fontsize=9, color="#dddddd",
                 verticalalignment="top")
-
         plt.tight_layout()
         plt.savefig(output_path, dpi=150, bbox_inches="tight",
                     facecolor=fig.get_facecolor())
         plt.close()
         print(f"  [Map] Category map → {output_path}")
-
-    # ── 3. Per-species heatmaps ───────────────────────────────────────────────
 
     def per_species_heatmaps(
         self,
@@ -218,27 +216,20 @@ class WeedDistributionMapper:
     ):
         Path(output_dir).mkdir(parents=True, exist_ok=True)
         G = self.grid_px
-
         by_species: Dict[str, List[Tuple[float, float, float]]] = defaultdict(list)
         for gx, gy, inst in global_coords:
             by_species[inst.class_name].append((gx, gy, inst.confidence))
-
         for cls_name, pts in by_species.items():
             if len(pts) < min_detections:
                 continue
-
             density = np.zeros((G, G), dtype=np.float32)
             for gx, gy, conf in pts:
                 px = int(np.clip(gx * G, 0, G - 1))
                 py = int(np.clip(gy * G, 0, G - 1))
                 density[py, px] += conf
             density_smooth = gaussian_filter(density, sigma=sigma)
-
-            color = CLASS_RGB_F.get(cls_name, (0, 0.8, 0))
-            cmap  = LinearSegmentedColormap.from_list(
-                "sp", ["#0a0a0a", color]
-            )
-
+            color = _species_color(cls_name, self.class_names)
+            cmap  = LinearSegmentedColormap.from_list("sp", ["#0a0a0a", color])
             fig, ax = plt.subplots(figsize=(6, 5.5))
             ax.imshow(density_smooth, origin="upper", cmap=cmap,
                       extent=[0, 1, 1, 0], interpolation="bilinear")
@@ -247,14 +238,11 @@ class WeedDistributionMapper:
             ax.set_xlabel("Field X", fontsize=10)
             ax.set_ylabel("Field Y", fontsize=10)
             plt.tight_layout()
-
             safe_name = cls_name.replace(" ", "_")
             out_path  = str(Path(output_dir) / f"{safe_name}_heatmap.png")
             plt.savefig(out_path, dpi=130, bbox_inches="tight")
             plt.close()
             print(f"  [Map] {cls_name} heatmap → {out_path}")
-
-    # ── 4. Summary statistics ─────────────────────────────────────────────────
 
     def summary_stats(
         self,
@@ -265,61 +253,44 @@ class WeedDistributionMapper:
         counts   = Counter(inst.class_name for _, _, inst in global_coords)
         total    = len(global_coords)
         conf_arr = np.array([inst.confidence for _, _, inst in global_coords])
-
         lines = [
-            "=" * 50,
-            "  WEED DISTRIBUTION SUMMARY",
-            "=" * 50,
+            "=" * 50, "  WEED DISTRIBUTION SUMMARY", "=" * 50,
             f"  Images processed : {n_images}",
             f"  Total detections : {total}",
             f"  Avg confidence   : {conf_arr.mean():.3f}" if total else "  Avg confidence   : N/A",
-            "",
-            "  Species breakdown:",
+            "", "  Species breakdown:",
         ]
         for cls_name in self.class_names:
             cnt = counts.get(cls_name, 0)
             pct = cnt / total * 100 if total else 0.0
             lines.append(f"    {cls_name:<25}  {cnt:4d}  ({pct:5.1f}%)")
-
         if total > 0:
             xs = np.array([gx for gx, _, _ in global_coords])
             ys = np.array([gy for _, gy, _ in global_coords])
             lines += [
-                "",
-                "  Spatial statistics (normalised field coords):",
+                "", "  Spatial statistics (normalised field coords):",
                 f"    Centroid X : {xs.mean():.3f} ± {xs.std():.3f}",
                 f"    Centroid Y : {ys.mean():.3f} ± {ys.std():.3f}",
                 f"    Hot-spot X : {xs[xs.size//2]:.3f}",
                 f"    Hot-spot Y : {ys[ys.size//2]:.3f}",
             ]
-
         lines.append("=" * 50)
         text = "\n".join(lines)
         print(text)
         Path(output_path).write_text(text)
         print(f"  [Map] Summary stats → {output_path}")
 
-    # ── 5. Generate all maps ──────────────────────────────────────────────────
-
-    def generate_all(
-        self,
-        results: List[ImageResult],
-        output_dir: str,
-    ):
+    def generate_all(self, results: List[ImageResult], output_dir: str):
         out = Path(output_dir)
         out.mkdir(parents=True, exist_ok=True)
-
         all_instances = [inst for r in results for inst in r.instances]
         image_ids     = [r.image_id for r in results]
-
         if not all_instances:
             print("[Map] No detections found – skipping map generation.")
             (out / "summary_stats.txt").write_text("No detections.\n")
             return
-
         n_cols, n_rows = _tile_layout(len(results))
         global_coords  = _global_coords(all_instances, image_ids, n_cols, n_rows)
-
         print(f"\n[Map] Generating distribution maps for {len(all_instances)} detections…")
         self.density_heatmap(global_coords, str(out / "density_heatmap.png"))
         self.category_map(global_coords,   str(out / "category_map.png"))
@@ -328,7 +299,7 @@ class WeedDistributionMapper:
         print(f"\n[Map] All maps saved to: {out}")
 
 
-# ── CLI standalone ─────────────────────────────────────────────────────────────
+# ── CLI standalone ───────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
     import sys
@@ -339,7 +310,6 @@ if __name__ == "__main__":
     root = Path("outputs/sample_dataset")
     generate_dataset(str(root))
 
-    # Build fake ImageResults for demo (no trained models needed)
     rng = np.random.default_rng(42)
     demo_results: List[ImageResult] = []
     for img_idx in range(20):
