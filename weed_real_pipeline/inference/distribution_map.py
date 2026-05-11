@@ -37,15 +37,12 @@ import matplotlib.patches as mpatches
 from matplotlib.colors import LinearSegmentedColormap
 from scipy.ndimage import gaussian_filter
 
-# Import from parent package (handled by sys.path in inference_pipeline)
-try:
-    from inference.inference_pipeline import WeedInstance, ImageResult
-    from data.sample_generator import WEED_CLASSES, CLASS_COLORS_BGR
-except ImportError:
-    from inference_pipeline import WeedInstance, ImageResult
-    import sys
-    sys.path.insert(0, str(Path(__file__).parent.parent))
-    from data.sample_generator import WEED_CLASSES, CLASS_COLORS_BGR
+import sys
+sys.path.insert(0, str(Path(__file__).parent.parent))
+from inference.inference_pipeline import WeedInstance, ImageResult
+
+WEED_CLASSES: list = []
+CLASS_COLORS_BGR: dict = {}
 
 
 # ── Colour helpers ────────────────────────────────────────────────────────────
