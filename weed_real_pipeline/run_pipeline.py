@@ -45,10 +45,27 @@ import time
 from pathlib import Path
 
 # ── Path setup ────────────────────────────────────────────────────────────────
-REPO_ROOT    = Path(__file__).parent.parent
 PIPELINE_DIR = Path(__file__).parent
-sys.path.insert(0, str(REPO_ROOT))
-sys.path.insert(0, str(REPO_ROOT / "weed_detection_demo"))
+
+# weed_detection_demo may live alongside this repo or inside digital-agriculture-datasets
+def _find_demo() -> Path:
+    candidates = [
+        PIPELINE_DIR.parent / "weed_detection_demo",                          # same parent
+        PIPELINE_DIR.parent / "digital-agriculture-datasets" / "weed_detection_demo",
+        Path.home() / "weed" / "digital-agriculture-datasets" / "weed_detection_demo",
+        Path.home() / "digital-agriculture-datasets" / "weed_detection_demo",
+    ]
+    for c in candidates:
+        if (c / "models" / "yolov8_detector.py").exists():
+            return c
+    raise FileNotFoundError(
+        "Cannot find weed_detection_demo/. "
+        "Clone digital-agriculture-datasets alongside this repo, or set DEMO_PATH env var."
+    )
+
+_demo = Path(os.environ.get("DEMO_PATH", "")) if os.environ.get("DEMO_PATH") else _find_demo()
+sys.path.insert(0, str(_demo.parent))   # so `weed_detection_demo` is importable
+sys.path.insert(0, str(PIPELINE_DIR.parent))  # so `weed_real_pipeline` is importable
 
 import yaml
 
