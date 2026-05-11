@@ -20,31 +20,31 @@ multispectral:
 
 # ── Detection (YOLOv8) ────────────────────────────────────────────────────────
 detection:
-  model_size: "n"            # n | s | m | l | x
+  model_size: "s"            # n | s | m | l | x  (upgraded n→s for better accuracy)
   epochs: 100
   batch: 16
   imgsz: 640
   lr0: 0.01
   patience: 20
   cos_lr: true
-  # Augmentation
+  # Augmentation (stronger than default for small weed dataset)
   mosaic: 1.0
-  mixup: 0.1
+  mixup: 0.2                 # increased 0.1→0.2
   hsv_h: 0.015
   hsv_s: 0.7
   hsv_v: 0.4
   fliplr: 0.5
-  flipud: 0.2
+  flipud: 0.3                # increased 0.2→0.3
 
 # ── Classification (ResNeXt-50) ───────────────────────────────────────────────
 classification:
-  epochs: 50
+  epochs: 80                 # increased 50→80 for better convergence
   batch: 32
-  img_size: 224
-  crop_size: 96              # pixel size of extracted weed crop patches
+  img_size: 256              # increased 224→256 for more detail
+  crop_size: 128             # increased 96→128 for more context per patch
   lr_head: 1.0e-3
   lr_backbone: 1.0e-4
-  dropout: 0.3
+  dropout: 0.4               # increased 0.3→0.4 to reduce overfitting
   warmup_epochs: 5
   label_smoothing: 0.1
   # in_channels: 3 for rgb/rgb_ndvi/vi_stack; 5 for all5
@@ -52,7 +52,7 @@ classification:
 
 # ── Inference ─────────────────────────────────────────────────────────────────
 inference:
-  det_conf: 0.25
+  det_conf: 0.15             # lowered 0.25→0.15 to catch more detections
   det_iou: 0.45
   max_images: 0              # 0 = all images in the split (test → val → train)
 

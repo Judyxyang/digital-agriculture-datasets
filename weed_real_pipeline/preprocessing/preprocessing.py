@@ -62,13 +62,24 @@ def get_rgb_transforms(split: str, img_size: int = 224) -> A.Compose:
     """Albumentations pipeline for RGB classification (train or val)."""
     if split == "train":
         return A.Compose([
-            A.RandomResizedCrop(size=(img_size, img_size), scale=(0.65, 1.0)),
+            A.RandomResizedCrop(size=(img_size, img_size), scale=(0.5, 1.0)),
             A.HorizontalFlip(p=0.5),
-            A.VerticalFlip(p=0.3),
+            A.VerticalFlip(p=0.5),
             A.RandomRotate90(p=0.5),
-            A.ColorJitter(brightness=0.3, contrast=0.3,
-                          saturation=0.3, hue=0.1, p=0.6),
-            A.GaussNoise(p=0.3),
+            A.ColorJitter(brightness=0.4, contrast=0.4,
+                          saturation=0.4, hue=0.15, p=0.7),
+            A.OneOf([
+                A.GaussNoise(p=1.0),
+                A.GaussianBlur(blur_limit=(3, 5), p=1.0),
+                A.MotionBlur(blur_limit=5, p=1.0),
+            ], p=0.4),
+            A.OneOf([
+                A.RandomBrightnessContrast(p=1.0),
+                A.CLAHE(clip_limit=4.0, p=1.0),
+                A.Sharpen(p=1.0),
+            ], p=0.4),
+            A.CoarseDropout(max_holes=4, max_height=img_size // 8,
+                            max_width=img_size // 8, p=0.3),
             A.Normalize(mean=IMAGENET_MEAN, std=IMAGENET_STD),
             ToTensorV2(),
         ])
