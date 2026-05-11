@@ -232,7 +232,16 @@ def main():
         train_loader = DataLoader(train_ds, batch_size=bs, shuffle=True,  num_workers=0)
         val_loader   = DataLoader(val_ds,   batch_size=bs, shuffle=False, num_workers=0)
 
-        device = torch.device(args.device)
+        # Resolve device — "0,1" means multi-GPU; use cuda:0 as primary for torch
+        _dev_str = args.device
+        if "," in _dev_str:
+            primary_device = torch.device("cuda:0")
+        elif _dev_str.isdigit():
+            primary_device = torch.device(f"cuda:{_dev_str}")
+        else:
+            primary_device = torch.device(_dev_str)
+        device = primary_device
+
         model  = WeedClassifier(
             num_classes=len(CLASS_NAMES),
             pretrained=True,
@@ -241,9 +250,23 @@ def main():
             freeze_backbone=True,
         ).to(device)
 
+        # Wrap in DataParallel if multiple GPUs requested
+        use_multi_gpu = (
+            cfg.get("multi_gpu_classifier", False) and
+            torch.cuda.device_count() > 1 and
+            "," in _dev_str
+        )
+        if use_multi_gpu:
+            gpu_ids = [int(x) for x in _dev_str.split(",")]
+            model = torch.nn.DataParallel(model, device_ids=gpu_ids)
+            print(f"  Using DataParallel on GPUs: {gpu_ids}")
+
         total   = sum(p.numel() for p in model.parameters())
         train_p = sum(p.numel() for p in model.parameters() if p.requires_grad)
         print(f"  ResNeXt-50-32x4d | total: {total:,} | trainable (phase 1): {train_p:,}")
+        if torch.cuda.is_available():
+            for i in range(torch.cuda.device_count()):
+                print(f"  GPU {i}: {torch.cuda.get_device_name(i)}")
 
         criterion = LabelSmoothingCrossEntropy(cls_cfg.get("label_smoothing", 0.1))
         optimizer = build_optimizer(model, lr=cls_cfg.get("lr_head", 1e-3))

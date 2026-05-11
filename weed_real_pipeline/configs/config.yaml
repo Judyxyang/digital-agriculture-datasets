@@ -57,4 +57,11 @@ inference:
   max_images: 50             # cap for demo; set to 0 for unlimited
 
 # ── Hardware ──────────────────────────────────────────────────────────────────
-device: "cpu"               # cpu | cuda | mps
+# Single GPU:       device: "cuda"   or  device: "0"
+# Both GPUs:        device: "0,1"    ← YOLOv8 uses both automatically
+# CPU only:         device: "cpu"
+device: "0,1"
+
+# ── ResNeXt multi-GPU (DataParallel) ──────────────────────────────────────────
+# Set to true to wrap ResNeXt-50 in nn.DataParallel across all visible GPUs
+multi_gpu_classifier: true
