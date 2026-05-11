@@ -54,7 +54,7 @@ classification:
 inference:
   det_conf: 0.25
   det_iou: 0.45
-  max_images: 50             # cap for demo; set to 0 for unlimited
+  max_images: 0              # 0 = all images in the split (test → val → train)
 
 # ── Hardware ──────────────────────────────────────────────────────────────────
 # Single GPU:       device: "cuda"   or  device: "0"

@@ -322,15 +322,42 @@ def main():
     # ── Stage 7: Inference + Distribution Maps ────────────────────────────────
     step("Stage 7 — Inference + Weed Distribution Maps")
 
-    infer_src = ds.val_imgs or ds.train_imgs
-    img_paths = (list(infer_src.rglob("*.jpg")) +
-                 list(infer_src.rglob("*.png")))
-    img_paths = sorted(img_paths)
+    # Prefer test split → val → train (in that order) so the distribution map
+    # is built from held-out data rather than training images.
+    if ds.test_imgs is not None:
+        infer_src   = ds.test_imgs
+        infer_split = "test"
+    elif ds.val_imgs is not None:
+        infer_src   = ds.val_imgs
+        infer_split = "val"
+    else:
+        infer_src   = ds.train_imgs
+        infer_split = "train"
+
+    print(f"  Inference split: '{infer_split}'  ({infer_src})")
+
+    img_paths = sorted(
+        list(infer_src.rglob("*.jpg")) + list(infer_src.rglob("*.png"))
+    )
+    total_avail = len(img_paths)
     if args.max_infer > 0:
         img_paths = img_paths[:args.max_infer]
+    if len(img_paths) < total_avail:
+        print(f"  NOTE: capped at {args.max_infer}/{total_avail} images "
+              f"(set --max_infer 0 for all)")
     img_paths = [str(p) for p in img_paths]
 
-    ms_dir_p = Path(ms_val)
+    # Locate multispectral files for the chosen split
+    if infer_split == "test":
+        ms_infer_dir = str(out / "multispectral" / "test")
+        if args.simulate_ms:
+            ds.generate_multispectral(ms_infer_dir, split="test")
+    elif infer_split == "val":
+        ms_infer_dir = ms_val
+    else:
+        ms_infer_dir = ms_train
+
+    ms_dir_p = Path(ms_infer_dir)
     ms_paths = []
     for ip in img_paths:
         ms_p = ms_dir_p / f"{Path(ip).stem}_ms.npy"
