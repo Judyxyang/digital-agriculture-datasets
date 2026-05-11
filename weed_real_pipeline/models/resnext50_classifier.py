@@ -204,7 +204,8 @@ class CropClassifier:
         self.model       = model.eval()
         self.class_names = class_names
         self.img_size    = img_size
-        self.device      = device
+        # Resolve multi-GPU string to single device for inference tensors
+        self.device      = "cuda:0" if (isinstance(device, str) and "," in device) else device
 
         import albumentations as A
         from albumentations.pytorch import ToTensorV2
