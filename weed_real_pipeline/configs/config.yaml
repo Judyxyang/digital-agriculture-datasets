@@ -5,7 +5,7 @@
 
 dataset:
   # Point at your local YOLO-format dataset root
-  root: "~/weed/digital-agriculture-datasets/weed_archive_detection"
+  root: "data/weed_archive_detection"
   output_dir: "outputs/real_run"
 
 # ── Multispectral ─────────────────────────────────────────────────────────────
