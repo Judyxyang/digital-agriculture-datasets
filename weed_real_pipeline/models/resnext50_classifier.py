@@ -174,14 +174,19 @@ def save_checkpoint(model: WeedClassifier, optimizer, epoch: int,
 
 def load_checkpoint(path: str, class_names: List[str],
                     in_channels: int = 3, device: str = "cpu") -> WeedClassifier:
-    ckpt  = torch.load(path, map_location=device)
+    # Resolve multi-GPU device string to a single device for loading
+    if isinstance(device, str) and "," in device:
+        map_dev = "cuda:0"
+    else:
+        map_dev = device
+    ckpt  = torch.load(path, map_location=map_dev, weights_only=False)
     model = WeedClassifier(
         num_classes=len(class_names),
         pretrained=False,
         in_channels=ckpt.get("in_channels", in_channels),
     )
     model.load_state_dict(ckpt["state_dict"])
-    model.to(device)
+    model.to(map_dev)
     model.eval()
     return model
 
