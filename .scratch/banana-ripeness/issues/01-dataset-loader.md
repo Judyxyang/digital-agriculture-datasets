@@ -1,5 +1,5 @@
 ---
-Status: ready-for-agent
+Status: done
 ---
 
 # 01 — DatasetLoader with balanced splits
@@ -10,12 +10,12 @@ Implement a `DatasetLoader` that reads labeled banana images from a root directo
 
 ## Acceptance criteria
 
-- [ ] Loads images from `<root>/<ripeness-stage>/image.jpg` directory structure
-- [ ] Returns train / val / test splits as iterable DataLoaders
-- [ ] Augmentation (brightness/contrast jitter, horizontal flip) applied to train split only
-- [ ] Warns or errors if dataset is not balanced across the four ripeness stages
-- [ ] Interface: `load(path, split) → DataLoader`
-- [ ] Unit tests pass: correct split sizes; augmentation only on train; output balanced across classes
+- [x] Loads images from `<root>/<ripeness-stage>/image.jpg` directory structure
+- [x] Returns train / val / test splits as iterable DataLoaders
+- [x] Augmentation (brightness/contrast jitter, horizontal flip) applied to train split only
+- [x] Warns or errors if dataset is not balanced across the four ripeness stages
+- [x] Interface: `load(path, split) → DataLoader`
+- [x] Unit tests pass: correct split sizes; augmentation only on train; output balanced across classes
 
 ## Blocked by
 
