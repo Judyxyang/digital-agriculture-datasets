@@ -15,6 +15,7 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = ["pytest>=8.0"]
+demo = ["gradio>=4.0"]
 
 [tool.setuptools.packages.find]
 where = ["src"]
