@@ -1,5 +1,5 @@
 ---
-Status: ready-for-agent
+Status: done
 ---
 
 # 06 — InferencePipeline — load checkpoint, preprocess, predict under 500ms
@@ -12,12 +12,12 @@ This is the demoable end-to-end slice: a real banana image goes in, a ripeness s
 
 ## Acceptance criteria
 
-- [ ] Loads a checkpoint and is ready to predict with minimal setup
-- [ ] Accepts a raw image as input
-- [ ] Returns `(ripeness_stage, confidence_score)` for each image
-- [ ] Inference completes in under 500ms per image on target edge hardware
-- [ ] Low-confidence predictions are flagged (confidence score surfaced to caller for thresholding)
-- [ ] Uses ImagePreprocessor — no duplicated preprocessing logic
+- [x] Loads a checkpoint and is ready to predict with minimal setup
+- [x] Accepts a raw image as input
+- [x] Returns `(ripeness_stage, confidence_score)` for each image
+- [x] Inference completes in under 500ms per image on target edge hardware
+- [x] Low-confidence predictions are flagged (confidence score surfaced to caller for thresholding)
+- [x] Uses ImagePreprocessor — no duplicated preprocessing logic
 
 ## Blocked by
 
