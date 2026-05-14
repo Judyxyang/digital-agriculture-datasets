@@ -1,5 +1,5 @@
 ---
-Status: ready-for-agent
+Status: done
 ---
 
 # 07 — ModelExporter — TFLite & Core ML export with int8 quantization
@@ -10,13 +10,13 @@ Implement a `ModelExporter` that converts the trained PyTorch MobileNetV2 checkp
 
 ## Acceptance criteria
 
-- [ ] Exports trained PyTorch checkpoint to TFLite format (Android)
-- [ ] Exports trained PyTorch checkpoint to Core ML format (iOS)
-- [ ] Applies int8 quantization to both exported formats
-- [ ] Exported TFLite model is ≤ 1MB
-- [ ] Interface: `export(checkpoint_path, format) → exported_model_path`
-- [ ] Validates exported model output matches original PyTorch model on a sample batch (within floating point tolerance)
-- [ ] Unit tests pass: exported model output matches PyTorch model output on synthetic input
+- [x] Exports trained PyTorch checkpoint to TFLite format (Android)
+- [x] Exports trained PyTorch checkpoint to Core ML format (iOS)
+- [x] Applies int8 quantization to both exported formats
+- [x] Exported TFLite model is ≤ 1MB
+- [x] Interface: `export(checkpoint_path, format) → exported_model_path`
+- [x] Validates exported model output matches original PyTorch model on a sample batch (within floating point tolerance)
+- [x] Unit tests pass: exported model output matches PyTorch model output on synthetic input
 
 ## Blocked by
 
