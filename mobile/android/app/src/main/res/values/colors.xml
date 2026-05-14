@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="background">#121212</color>
+    <color name="capture_button">#FFFFFF</color>
+
+    <!-- Ripeness stage colours — match canonical 4-class vocabulary -->
+    <color name="stage_unripe">#2E7D32</color>       <!-- green -->
+    <color name="stage_nearly_ripe">#9E9D24</color>  <!-- yellow-green -->
+    <color name="stage_ripe">#F9A825</color>         <!-- yellow -->
+    <color name="stage_overripe">#5D4037</color>     <!-- brown -->
+
+    <!-- Warning -->
+    <color name="warning_background">#FFF3E0</color>
+    <color name="warning_text">#E65100</color>
+</resources>

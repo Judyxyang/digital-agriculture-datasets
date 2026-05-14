@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.BananaRipeness" parent="Theme.MaterialComponents.DayNight.NoActionBar">
+        <item name="colorPrimary">#F9A825</item>
+        <item name="colorPrimaryVariant">#F57F17</item>
+        <item name="colorOnPrimary">@android:color/black</item>
+        <item name="android:windowBackground">@color/background</item>
+    </style>
+</resources>

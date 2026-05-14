@@ -1,5 +1,5 @@
 ---
-Status: ready-for-agent
+Status: done
 ---
 
 # 08 — Mobile App — offline camera app for banana farmers
@@ -16,14 +16,14 @@ The UI is farmer-facing and must be readable at a glance:
 
 ## Acceptance criteria
 
-- [ ] Camera viewfinder displayed on launch
-- [ ] Capture button triggers inference on the captured image
-- [ ] Ripeness stage displayed with plain-language label and colour indicator
-- [ ] Confidence score displayed as a percentage
-- [ ] Low-confidence result (< threshold) shows a visual warning and prompts retake
-- [ ] App works fully offline — no network calls at inference time
-- [ ] Inference completes in under 500ms on a mid-range Android or iOS device
-- [ ] Colour indicators match canonical stages: green / yellow-green / yellow / brown
+- [x] Camera viewfinder displayed on launch
+- [x] Capture button triggers inference on the captured image
+- [x] Ripeness stage displayed with plain-language label and colour indicator
+- [x] Confidence score displayed as a percentage
+- [x] Low-confidence result (< threshold) shows a visual warning and prompts retake
+- [x] App works fully offline — no network calls at inference time
+- [x] Inference completes in under 500ms on a mid-range Android or iOS device
+- [x] Colour indicators match canonical stages: green / yellow-green / yellow / brown
 
 ## Blocked by
 

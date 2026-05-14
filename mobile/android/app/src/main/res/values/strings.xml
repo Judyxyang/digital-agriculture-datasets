@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Banana Ripeness</string>
+    <string name="retake_photo">📷 Take another photo</string>
+    <string name="low_confidence_warning">⚠ Low confidence — try again in better lighting or move closer to the banana.</string>
+    <string name="camera_permission_denied">Camera permission is required to use this app.</string>
+</resources>
